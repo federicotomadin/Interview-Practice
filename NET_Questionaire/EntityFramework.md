@@ -1,0 +1,125 @@
+# Higher Loading
+
+In Entity Framework (EF), the term "higher loading" generally refers to situations where queries load more data than
+necessary, which can negatively impact application performance. To optimize performance and avoid overloading, it is
+important to understand the different data loading methods in Entity Framework and how to manage them correctly.
+
+1. Eager Loading
+   Eager loading is the process of loading related entities as part of the initial query. This is done using the Include
+   method, which ensures that related data is loaded along with the main entity.
+
+```csharp
+using (var context = new BloggingContext())
+{
+    var blogs = context.Blogs.Include(b => b.Posts).ToList();
+}
+```
+
+2. Lazy Loading
+   Lazy loading is the process of loading related entities only when they are accessed for the first time. This is the
+   default behavior in Entity Framework, but it can lead to performance issues if not managed properly.
+
+```csharp
+using (var context = new BloggingContext())
+{
+    var blog = context.Blogs.First();
+    var posts = blog.Posts.ToList(); // Lazy loading occurs here
+}
+```
+
+3. Explicit Loading
+   Explicit loading is the process of loading related entities on-demand using the Load method. This gives more control
+   over when related entities are loaded and can be useful in scenarios where lazy loading is disabled.
+
+```csharp
+using (var context = new BloggingContext())
+{
+    var blog = context.Blogs.First();
+    context.Entry(blog).Collection(b => b.Posts).Load(); // Explicit loading
+}
+```
+
+---
+
+## Cómo EF Core ordena las Migrations
+
+### La respuesta corta
+
+EF Core ordena las migrations **alfabéticamente por nombre**, y como cada migration se genera con un timestamp prefijado (`yyyyMMddHHmmss_NombreDescriptivo`), el orden alfabético coincide con el orden cronológico.
+
+```bash
+dotnet ef migrations add AddPolicyTable
+dotnet ef migrations add AddDocumentExpirationColumn
+dotnet ef migrations add CreatePolicyHolderIndex
+```
+
+Genera archivos como:
+```
+20250114093022_AddPolicyTable.cs
+20250120141533_AddDocumentExpirationColumn.cs
+20250203102811_CreatePolicyHolderIndex.cs
+ApplicationDbContextModelSnapshot.cs
+```
+
+### Design-time vs Runtime
+
+**En tiempo de diseño** (al generar una migration), EF compara:
+- `ApplicationDbContextModelSnapshot.cs` (modelo "como era") vs tu código actual (modelo "como es ahora")
+- La diferencia → operaciones de migration (`AddColumn`, `CreateTable`, etc.)
+
+Cada migration también tiene un `.Designer.cs` con un snapshot del modelo en ese punto histórico.
+
+**En tiempo de ejecución** (al aplicar migrations con `dotnet ef database update` o `context.Database.Migrate()`):
+
+1. EF consulta `__EFMigrationsHistory` en la DB:
+```sql
+SELECT MigrationId FROM __EFMigrationsHistory
+```
+
+2. Enumera todas las migrations compiladas en el assembly.
+3. Las migrations del assembly que no están en la tabla son las **pendientes**.
+4. Las ordena por `MigrationId` (alfabéticamente = cronológicamente) y las ejecuta una por una. Cada migration exitosa se inserta en `__EFMigrationsHistory` dentro de la misma transacción.
+
+### El atributo Migration
+
+```csharp
+[DbContext(typeof(ApplicationDbContext))]
+[Migration("20250114093022_AddPolicyTable")]
+partial class AddPolicyTable
+{
+    protected override void Up(MigrationBuilder migrationBuilder) { ... }
+    protected override void Down(MigrationBuilder migrationBuilder) { ... }
+}
+```
+
+El `MigrationId` del atributo es lo que EF usa como clave canónica — no el nombre de la clase ni el nombre del archivo.
+
+### Implicancias prácticas
+
+**Merges entre branches:** si dos devs crean migrations en paralelo, los snapshots entran en conflicto. La solución:
+1. Pulleás main actualizado.
+2. Hacés `dotnet ef migrations remove` de tu migration local.
+3. Regenerás la migration sobre el modelo actualizado.
+
+**No renombres una migration ya aplicada.** El `MigrationId` cambia y EF lo considera una migration distinta.
+
+**Scripts SQL idempotentes** (para producción):
+```bash
+dotnet ef migrations script --idempotent -o migrations.sql
+```
+Genera `IF NOT EXISTS (SELECT * FROM __EFMigrationsHistory WHERE MigrationId = '...')` antes de cada bloque. Ideal para pipelines CI/CD donde el schema se despliega como step separado.
+
+---
+
+## Strategies to Avoid Higher Loading 
+
+To avoid higher loading in Entity Framework, consider the following strategies:
+
+1. Use Eager Loading: When you know in advance that you will need related entities, use eager loading to fetch them
+   along with the main entity in a single query.
+2. Disable Lazy Loading: If you don't need lazy loading, consider disabling it to prevent unnecessary queries from being
+   executed.
+3. Use Explicit Loading: When you need to load related entities on-demand, use explicit loading to control when the
+   related data is fetched.
+4. Monitor Query Performance: Keep an eye on the queries generated by Entity Framework and use tools like SQL Profiler
+   to identify and optimize queries that may be causing higher loading.
