@@ -1,0 +1,6 @@
+[submodule "NET"]
+	path = NET
+	url = https://github.com/federicotomadin/NET-Q-A.git
+[submodule "SQL_Questionnaire"]
+	path = SQL_Questionnaire
+	url = https://github.com/federicotomadin/SQL-Questionnaire.git
