@@ -1,0 +1,6 @@
+---
+description: Global user rules from home directory
+alwaysApply: true
+---
+
+@~/.cursor/my-rules.md
